@@ -1,0 +1,65 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: fairdrop_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgrespassword
+      POSTGRES_DB: fairdrop
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: fairdrop_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build: .
+    container_name: fairdrop_backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgrespassword@postgres:5432/fairdrop
+      REDIS_URL: redis://redis:6379/0
+      QUEUE_TOKEN_SECRET: fairdrop-queue-secret-key-32chars-min!
+      QUEUE_TOKEN_TTL_SECONDS: 300
+      QUEUE_ADMISSION_PER_SECOND: 50
+      QUEUE_ADMISSION_INTERVAL_SECONDS: 1
+      USER_REQUESTS_PER_SECOND: 20
+      IP_REQUESTS_PER_SECOND: 100
+      SECURITY_BLOCK_SECONDS: 30
+      MITIGATION_ENABLED: "true"
+      FRONTEND_ORIGIN: http://localhost:3000
+      RISK_THROTTLE_THRESHOLD: 60
+      RISK_BLOCK_THRESHOLD: 80
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+
+volumes:
+  postgres_data:
+  redis_data:
